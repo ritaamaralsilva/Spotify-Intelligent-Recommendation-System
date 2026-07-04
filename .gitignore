@@ -1,0 +1,18 @@
+# Credenciais e Segredos (CRÍTICO)
+.env
+.env.local
+.cache
+
+# Dependências do Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.next/
+
+# Dependências do Backend (Python)
+backend/__pycache__/
+backend/*.pyc
+backend/.venv/
+backend/env/
+
+# Ficheiros de sistema
+.DS_Store
