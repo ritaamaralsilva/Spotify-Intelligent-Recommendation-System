@@ -1,0 +1,7 @@
+# Ignorar dados gerados e logs do cálculo de linguagens
+backend/data/* linguist-vendored
+*.txt linguist-vendored
+*.json linguist-vendored
+
+frontend/src/**/*.tsx linguist-documentation=false
+frontend/src/**/*.ts linguist-documentation=false
