@@ -1,7 +1,9 @@
 # Credenciais e Segredos (CRÍTICO)
 .env
 .env.local
-.cache
+
+#Spotify auth cache (token)
+.cache 
 
 # Dependências do Frontend
 frontend/node_modules/
@@ -13,6 +15,11 @@ backend/__pycache__/
 backend/*.pyc
 backend/.venv/
 backend/env/
+backend/venv/
 
 # Ficheiros de sistema
 .DS_Store
+
+# Ficheiros temporários do Python
+__pycache__/
+*.pyc
