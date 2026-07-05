@@ -5,12 +5,16 @@ from fastapi import FastAPI, HTTPException, Response, Cookie, Depends
 from fastapi.responses import RedirectResponse
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
 from src.spotify_client import SpotifyExtractor
 from src.ai_recommender import AIRecommender
+from src.spotify_playlister import SpotifyPlaylister
 from dotenv import load_dotenv
 
-from database import engine, Base  
-import models  # Garante que o ficheiro com as classes (User, etc.) é lido
+from database import engine, Base, get_db
+import models  
 
 load_dotenv()  # Carrega as variáveis de ambiente do arquivo .env
 
@@ -40,6 +44,7 @@ app.add_middleware(
 # Inicializa os módulos de extração e recomendação
 extractor = SpotifyExtractor() 
 recommender = AIRecommender() 
+playlister = SpotifyPlaylister()
 
 # Dependencia de validacao do token de sessão
 def get_current_token(session_token: str = Cookie(None)):
@@ -50,6 +55,10 @@ def get_current_token(session_token: str = Cookie(None)):
     if not spotify_token:
         raise HTTPException(status_code=401, detail="Sessão inválida ou expirada.")
     return spotify_token
+
+#schema para receber o nome da playlist do frontend (user input)
+class PlaylistRequest(BaseModel):
+    playlist_name: str
 
 # Rotas de autenticação e recomendação (OAUTH2 + Cookie)
 
@@ -100,7 +109,7 @@ async def spotify_callback(response: Response, code: str = None, error: str = No
         key="session_token",
         value=meu_jwt_seguro,
         httponly=True,
-        secure=False,
+        secure=False, #mudar para True em produção com HTTPS
         samesite="lax",
         max_age=3600,  # 1 hora
         path="/"
@@ -117,21 +126,69 @@ def scan_spotify(spotify_token: str = Depends(get_current_token)):
         return {"status": "success", "total_artistas": len(artistas)}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+# rota para gerar a playlist com as recomendações
+@app.post("/api/recommend/generate-playlist")
+async def generate_ai_playlist(
+    dados_request: PlaylistRequest,
+    spotify_token: str = Depends(get_current_token),
+    db: Session = Depends(get_db)
+):
+    """Gera 10 artistas emergentes recomendados e cria uma playlist no Spotify com as suas 5 melhores faixas cada (até 50 faixas no total)"""
+    try: 
+        # descobre quem é o utilizador atual perguntando ao spotify
+        spotify_user_id = await playlister.obter_user_id(spotify_token)
+        
+        # chamar a IA passando a sessão da BD e o ID do utilizador (Usa a lógica dos géneros do MySQL)
+        artistas_descobertos = recommender.obter_recomendacoes(db, spotify_user_id)
 
-@app.get("/api/recommend")
-def get_recommendations(spotify_token: str = Depends(get_current_token)):
-    """Rota que chama a api do OpenAI e filtra as repetições"""
-    try:
-        descobertas = recommender.obter_recomendacoes()
-        return {"status": "success", "recommendations": descobertas}
+        if not artistas_descobertos:
+            raise HTTPException(
+                status_code=400,
+                detail="Não foram encontradas recomendações. Certifica-te de que já fizeste o scan da tua conta do Spotify."
+            )
+        
+        # criar uma playlist vazia no Spotify com o nome fornecido pelo user
+        playlist_id, playlist_url = await playlister.criar_playlist_vazia(
+            token=spotify_token,
+            spotify_user_id=spotify_user_id,
+            nome_playlist=dados_request.playlist_name
+        )
+        
+        # preencher a playlist com as faixas dos artistas recomendados (até 50 faixas no total)
+        total_musicas = await playlister.preencher_playlist(
+            token=spotify_token,
+            playlist_id=playlist_id,
+            artistas_sugeridos=artistas_descobertos
+        )
+        
+        # guardar a playlist gerada na base de dados para histórico do user
+        nova_playlist_db = models.GeneratedPlaylist(
+            spotify_id=spotify_user_id,
+            playlist_spotify_id=playlist_id,
+            name=dados_request.playlist_name,
+            url=playlist_url
+        )
+        db.add(nova_playlist_db)
+        db.commit()
+
+        return {
+            "status": "success",
+            "message": f"Playlist '{dados_request.playlist_name}' criada com sucesso!",
+            "playlist_url": playlist_url,
+            "tracks_count": total_musicas,
+            "artists_discovered": artistas_descobertos
+        }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        db.rollback()  # desfaz alterações na BD em caso de erro
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar a playlist: {str(e)}")
 
-if __name__ == "__main__":
-    import uvicorn
-    # Corre o servidor do Python
-    port_split = BACKEND_URL.split(":")[-1].replace("/", "")
-    port = int(port_split) if port_split.isdigit() else 8000
-
-    uvicorn.run(app, host="127.0.0.1", port=port)
+# rota antiga para compatibilidade com o frontend legado (depreciada)
+@app.get("/api/recommend")
+def get_recommendations():
+    """Rota legada. O frontend deve usar a nova rota POST /api/recommend/generate-playlist"""
+    return {
+        "status": "deprecated", 
+        "message": "Usa a nova rota POST /api/recommend/generate-playlist para criar playlists customizadas."
+    }
     

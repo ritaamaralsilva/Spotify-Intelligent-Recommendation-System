@@ -1,57 +1,89 @@
 import os
+import json
 from openai import OpenAI
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from models import User, Artist, UserArtist, GeneratedPlaylist
 
 class AIRecommender:
     def __init__(self):
-        # O cliente da OpenAI lê automaticamente a variável OPENAI_API_KEY do teu .env
         self.client = OpenAI()
 
-    def ler_historico_local(self, caminho_arquivo="data/historico_artistas.txt"):
-        """Lê o dataset local de artistas que o utilizador já conhece."""
-        if not os.path.exists(caminho_arquivo):
-            return set()
-        with open(caminho_arquivo, "r", encoding="utf-8") as f:
-            return set(linha.strip() for linha in f if linha.strip())
-
-    def obter_recomendacoes(self):
-        """Analisa o gosto musical e pede à OpenAI artistas novos e fora do radar."""
-        # 1. Carrega o teu histórico completo do ficheiro gerado pelo Spotify
-        artistas_conhecidos = self.ler_historico_local()
+    def obter_recomendacoes(self, db: Session, spotify_id: str):
+        """Analisa o gosto de forma ultra-otimizada em tokens e pede recomendações à OpenAI."""
+        
+        # filtro de artistas que o user já conhece para evitar recomendações redundantes
+        artistas_db = (
+            db.query(Artist.name)
+            .join(UserArtist, Artist.id == UserArtist.artist_id)
+            .filter(UserArtist.spotify_id == spotify_id)
+            .all()
+        )
+        artistas_conhecidos = {row.name for row in artistas_db}
         
         if not artistas_conhecidos:
-            return ["Erro: Primeiro precisas de atualizar o teu Dataset do Spotify na interface!"]
+            return []
 
-        # Pegamos numa amostra (ex: os primeiros 20 artistas) para dar contexto do teu estilo à IA
-        amostra_gosto = list(artistas_conhecidos)[:20]
+        # query para obter os géneros musicais dos artistas mais ouvidos do user
+        # a query é feita de forma a minimizar o número de tokens enviados para a OpenAI, evitando enviar listas longas de artistas ou géneros repetidos.
+        generos_db = (
+            db.query(Artist.genres)
+            .join(UserArtist, Artist.id == UserArtist.artist_id)
+            .filter(UserArtist.spotify_id == spotify_id)
+            .all()
+        )
+        
+        # contabiliza a frequência de cada género
+        contagem_generos = {}
+        for row in generos_db:
+            if row.genres:
+                # se os géneros estiverem separados por vírgula, divide e contabiliza cada um
+                for g in [gen.strip() for gen in row.genres.split(",")]:
+                    contagem_generos[g] = contagem_generos.get(g, 0) + 1
+        
+        # amostra de 15 géneros mais ouvidos para o prompt
+        generos_top = sorted(contagem_generos, key=contagem_generos.get, reverse=True)[:15]
+        
+        # amostra de artistas conhecidos para o prompt (até 30)
+        amostra_artistas = list(artistas_conhecidos)[:30]
 
-        # 2. Engenharia de Prompt para garantir respostas limpas que o código consiga ler
+        # prompt para a OpenAI (leve para minimizar tokens gastos e maximizar a relevância e eficiência)
         prompt = f"""
-        Atue como um recomendador de música especialista em descobrir artistas independentes, alternativos e de nicho.
-        Eu já oiço e conheço muito bem estes artistas: {', '.join(amostra_gosto)}.
+        Atuas como um curador de música underground. Sugere 10 artistas EMERGENTES (popularidade < 40/100 no Spotify).
+        
+        Perfil do Utilizador (Bússola Estética):
+        - Géneros Dominantes: {', '.join(generos_top)}
+        - Alguns Artistas de Referência: {', '.join(amostra_artistas)}
 
-        Recomende uma lista de 15 artistas novos que tenham uma sonoridade parecida ou complementar a estes.
-        Regra estrita: Retorne APENAS os nomes dos artistas, um por linha, sem números, sem introduções e sem explicações.
+        REGRAS:
+        1. Baseia-te estritamente nos Géneros Dominantes para evitar ruído local/pimba ou pop comercial.
+        2. Devolve APENAS um array JSON de strings com os nomes dos artistas, sem markdown, sem explicações.
+
+        Formato: ["Nome 1", "Nome 2"]
         """
 
-        # 3. Chamada oficial à API da OpenAI (padrão de mercado para o teu currículo)
-        completion = self.client.chat.completions.create(
-            model="gpt-4o-mini", # O modelo ideal: ultra rápido, inteligente e super barato
-            messages=[
-                {"role": "system", "content": "Você é um curador musical focado em dados brutos e limpos, que nunca adiciona texto decorativo."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7
-        )
-
-        resposta_ia = completion.choices[0].message.content.strip().split('\n')
-
-        # 4. filtrar: Excluir o que tu já conheces
-        novas_descobertas = []
-        for artista in resposta_ia:
-            nome_limpo = artista.strip()
-            # Se o artista gerado pela IA NÃO estiver no teu arquivo de texto, ele é uma descoberta real!
-            if nome_limpo and nome_limpo not in artistas_conhecidos:
-                novas_descobertas.append(nome_limpo)
-
-        # Devolvemos apenas os primeiros 5 sobreviventes ao filtro para o Frontend React
-        return novas_descobertas[:5]
+        # chamada à API
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "És um curador focado em micro-nichos e artistas independentes."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7
+            )
+            conteudo_resposta = response.choices[0].message.content.strip()
+            artistas_sugeridos = json.loads(conteudo_resposta)
+            
+            # o filtro de exclusão local: remove artistas que o user já conhece
+            novas_descobertas = []
+            for artista in artistas_sugeridos:
+                nome_limpo = artista.strip()
+                if nome_limpo and nome_limpo not in artistas_conhecidos:
+                    novas_descobertas.append(nome_limpo)
+            
+            return novas_descobertas[:10]
+            
+        except Exception as e:
+            print(f"Erro: {e}")
+            return []
