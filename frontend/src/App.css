@@ -1,3 +1,20 @@
+/* RESET TOTAL DO PROJETO */
+* {
+  box-sizing: border-box !important;
+}
+
+html,
+body,
+#root {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100vh !important;
+  background-color: #121212 !important;
+  overflow-x: hidden !important;
+}
+
 .counter {
   font-size: 16px;
   padding: 5px 10px;

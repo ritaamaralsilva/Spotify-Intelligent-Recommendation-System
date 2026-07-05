@@ -56,15 +56,17 @@ function App() {
 
   return (
     <div style={{
-      backgroundColor: '#121212',
-      color: '#FFFFFF',
-      minHeight: '100vh',
-      fontFamily: 'Arial, sans-serif',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      padding: '40px 20px'
-    }}>
+  backgroundColor: '#121212',
+  color: '#FFFFFF',
+  width: '100%',               // Garante que ocupa toda a largura do ecrã
+  minHeight: '100dvh',           // Usa 'dvh' (dynamic vh) para evitar problemas com barras de navegação em telemóveis
+  fontFamily: 'Arial, sans-serif',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  padding: '40px 20px',
+  boxSizing: 'border-box'        // Garante que o padding não "empurra" o ecrã para o lado, criando scroll horizontal
+}}>
       <header style={{ marginBottom: '40px', textAlign: 'center' }}>
         <h1 style={{ color: '#1DB954', fontSize: '2.5rem', marginBottom: '10px' }}>Spotify Recommendation System </h1>
         <p style={{ color: '#B3B3B3' }}>Descobre novos artistas fora do teu radar usando Inteligência Artificial</p>
@@ -79,7 +81,7 @@ function App() {
 
         {/* Secção de Sincronização */}
         <div style={{ backgroundColor: '#181818', padding: '24px', borderRadius: '8px', border: '1px solid #282828' }}>
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '12px' }}>1. Sincronizar Biblioteca</h2>
+          <h2 style={{ color: '#B3B3B3', fontSize: '1.2rem', marginBottom: '12px' }}>1. Sincronizar Biblioteca</h2>
           <p style={{ color: '#B3B3B3', fontSize: '0.9rem', marginBottom: '16px' }}>
             Mapeia as tuas playlists e músicas que gostaste para criares o teu histórico musical.
           </p>
@@ -110,7 +112,7 @@ function App() {
 
         {/* Secção de Recomendações */}
         <div style={{ backgroundColor: '#181818', padding: '24px', borderRadius: '8px', border: '1px solid #282828' }}>
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '12px' }}>2. Gerar Descobertas com IA</h2>
+          <h2 style={{ color: '#B3B3B3', fontSize: '1.2rem', marginBottom: '12px' }}>2. Gerar Descobertas com IA</h2>
           <p style={{ color: '#B3B3B3', fontSize: '0.9rem', marginBottom: '16px' }}>
             O GPT-4o mini vai analisar o teu gosto e sugerir 5 artistas novos que nunca ouviste.
           </p>
