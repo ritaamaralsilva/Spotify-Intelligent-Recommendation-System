@@ -1,5 +1,9 @@
 import os
 import urllib.parse
+from dotenv import load_dotenv
+
+load_dotenv()  # Carrega as variáveis de ambiente do arquivo .env
+
 from security import create_session_token, verify_session_token
 from fastapi import FastAPI, HTTPException, Response, Cookie, Depends
 from fastapi.responses import RedirectResponse
@@ -11,12 +15,11 @@ from sqlalchemy.orm import Session
 from src.spotify_client import SpotifyExtractor
 from src.ai_recommender import AIRecommender
 from src.spotify_playlister import SpotifyPlaylister
-from dotenv import load_dotenv
+
 
 from database import engine, Base, get_db
 import models  
 
-load_dotenv()  # Carrega as variáveis de ambiente do arquivo .env
 
 app = FastAPI(title="Spotify Recommendation System API", version="1.0")
 
@@ -110,7 +113,7 @@ async def spotify_callback(response: Response, code: str = None, error: str = No
         value=meu_jwt_seguro,
         httponly=True,
         secure=False, #mudar para True em produção com HTTPS
-        samesite="lax",
+        samesite="lax", 
         max_age=3600,  # 1 hora
         path="/"
     )
@@ -118,13 +121,57 @@ async def spotify_callback(response: Response, code: str = None, error: str = No
 
 # Rotas protegidas da aplicação (necessitam de token de sessão válido)
 @app.get("/api/scan")
-def scan_spotify(spotify_token: str = Depends(get_current_token)):
-    """Rota que consome o api do Spotify para procurar as bibliotecas do user e cria o dataset local .txt"""
+def scan_spotify(
+    spotify_token: str = Depends(get_current_token),
+    db: Session = Depends(get_db)
+):
+    """Rota que consome a api do Spotify para procurar as bibliotecas do user, cria o dataset local .txt
+    e grava/atualiza os artistas (com géneros) e a relação user-artista na base de dados MySQL."""
     try:
-        artistas = extractor.extrair_todos_os_artistas(token=spotify_token)
-        extractor.salvar_dataset(artistas)
-        return {"status": "success", "total_artistas": len(artistas)}
+        # descobre o ID do utilizador atual no Spotify
+        with httpx.Client() as client:
+            me_res = client.get(
+                "https://api.spotify.com/v1/me",
+                headers={"Authorization": f"Bearer {spotify_token}"}
+            )
+            if me_res.status_code != 200:
+                raise HTTPException(status_code=401, detail="Não foi possível obter dados do Spotify.")
+            spotify_user_id = me_res.json()["id"]
+
+        artistas_nomes = extractor.extrair_todos_os_artistas(token=spotify_token)
+        extractor.salvar_dataset(artistas_nomes)
+
+        # garante que o utilizador existe na tabela users
+        user_db = db.query(models.User).filter(models.User.spotify_id == spotify_user_id).first()
+        if not user_db:
+            user_db = models.User(spotify_id=spotify_user_id)
+            db.add(user_db)
+            db.commit()
+
+        # grava/atualiza cada artista e a sua relação com o utilizador
+        for nome_artista in artistas_nomes:
+            artist_db = db.query(models.Artist).filter(models.Artist.name == nome_artista).first()
+
+            if not artist_db:
+                artist_db = models.Artist(name=nome_artista, genres=None)  # inicialmente sem géneros (terei de recorrer a outra API para ir buscar essa info se quiser complementar no futuro)
+                db.add(artist_db)
+                db.commit()
+
+            relacao_existente = (
+                db.query(models.UserArtist)
+                .filter(
+                    models.UserArtist.spotify_id == spotify_user_id,
+                    models.UserArtist.artist_id == artist_db.id
+                )
+                .first()
+            )
+            if not relacao_existente:
+                db.add(models.UserArtist(spotify_id=spotify_user_id, artist_id=artist_db.id))
+                db.commit()
+
+        return {"status": "success", "total_artistas": len(artistas_nomes)}
     except Exception as e:
+        db.rollback()
         return {"status": "error", "message": str(e)}
     
 # rota para gerar a playlist com as recomendações
@@ -179,9 +226,60 @@ async def generate_ai_playlist(
             "tracks_count": total_musicas,
             "artists_discovered": artistas_descobertos
         }
+    except HTTPException:
+        # deixa passar HTTPException tal como foi lançada (400, 401, etc.),
+        # sem a envolver num 500 genérico
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()  # desfaz alterações na BD em caso de erro
         raise HTTPException(status_code=500, detail=f"Erro ao gerar a playlist: {str(e)}")
+    
+# rota para obter estatísticas de géneros (Top 5 artistas mais proeminentes na biblioteca do user)
+@app.get("/api/stats/genres")
+def get_genre_stats(
+    spotify_token: str = Depends(get_current_token),
+    db: Session = Depends(get_db)
+):
+    """Adaptado: Devolve o Top 5 de Artistas mais proeminentes na biblioteca do user."""
+    try:
+        with httpx.Client() as client:
+            me_res = client.get("https://api.spotify.com/v1/me", headers={"Authorization": f"Bearer {spotify_token}"})
+            if me_res.status_code != 200:
+                raise HTTPException(status_code=401, detail="Não foi possível obter dados do Spotify.")
+            spotify_user_id = me_res.json()["id"]
+
+        # Procura os nomes dos artistas associados a este utilizador
+        artistas_db = (
+            db.query(models.Artist.name)
+            .join(models.UserArtist, models.Artist.id == models.UserArtist.artist_id)
+            .filter(models.UserArtist.spotify_id == spotify_user_id)
+            .limit(5) # Pegamos em 5 para simular o Top 5
+            .all()
+        )
+
+        if not artistas_db:
+            return {"status": "success", "top_genres": []}
+
+        
+        # Formata os dados para o frontend (React) sem alterar a lógica do código existente
+        top_artistas_formatado = [
+            {
+                "genre": row.name, # Passa o nome do artista no lugar do género para o React ler sem alterar o código
+                "count": 1,
+                "percentage": round((1 / len(artistas_db)) * 100, 1)
+            }
+            for row in artistas_db
+        ]
+
+        return {
+            "status": "success",
+            "total_tags_analisadas": len(artistas_db),
+            "top_genres": top_artistas_formatado
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao calcular estatísticas: {str(e)}")
 
 # rota antiga para compatibilidade com o frontend legado (depreciada)
 @app.get("/api/recommend")
@@ -191,4 +289,7 @@ def get_recommendations():
         "status": "deprecated", 
         "message": "Usa a nova rota POST /api/recommend/generate-playlist para criar playlists customizadas."
     }
-    
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

@@ -38,14 +38,16 @@ class UserArtist(Base):
     user = relationship("User", back_populates="artists")
     artist = relationship("Artist")
 
-    class GeneratedPlaylist(Base):
-        __tablename__ = "generated_playlists"
 
-        id = Column(Integer, primary_key=True, autoincrement=True)
-        spotify_id = Column(String(255), ForeignKey("users.spotify_id", ondelete="CASCADE"), nullable=False)
-        spotify_playlist_id = Column(String(255), unique=True, nullable=False)
-        playlist_name = Column(String(255), nullable=False)
-        playlist_url = Column(String(510), nullable=False)
-        created_at = Column(DateTime, server_default=func.now())
+# Tabela para armazenar playlists geradas para cada utilizador
+class GeneratedPlaylist(Base):
+    __tablename__ = "generated_playlists"
 
-        user = relationship("User")
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    spotify_id = Column(String(255), ForeignKey("users.spotify_id", ondelete="CASCADE"), nullable=False)
+    playlist_spotify_id = Column(String(255), unique=True, nullable=False) # Igual ao main.py
+    name = Column(String(255), nullable=False)                             # Igual ao main.py
+    url = Column(String(510), nullable=False)                              # Igual ao main.py
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User")

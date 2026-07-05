@@ -3,7 +3,7 @@ import json
 from openai import OpenAI
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from models import User, Artist, UserArtist, GeneratedPlaylist
+from models import Artist, UserArtist
 
 class AIRecommender:
     def __init__(self):
@@ -49,16 +49,19 @@ class AIRecommender:
 
         # prompt para a OpenAI (leve para minimizar tokens gastos e maximizar a relevância e eficiência)
         prompt = f"""
-        Atuas como um curador de música underground. Sugere 10 artistas EMERGENTES (popularidade < 40/100 no Spotify).
-        
+        Atuas como um curador de música underground, especializado em artistas verdadeiramente independentes e pouco conhecidos.
+ 
         Perfil do Utilizador (Bússola Estética):
         - Géneros Dominantes: {', '.join(generos_top)}
         - Alguns Artistas de Referência: {', '.join(amostra_artistas)}
-
-        REGRAS:
-        1. Baseia-te estritamente nos Géneros Dominantes para evitar ruído local/pimba ou pop comercial.
-        2. Devolve APENAS um array JSON de strings com os nomes dos artistas, sem markdown, sem explicações.
-
+ 
+        REGRAS ESTRITAS:
+        1. Sugere 10 artistas EMERGENTES: sem contrato com major label, poucos milhares de ouvintes mensais no Spotify, sem terem tocado em festivais grandes nem tido singles virais.
+        2. EXCLUI qualquer artista que já seja amplamente conhecido, premiado (ex: Grammy), com décadas de carreira, ou "indie consagrado" — mesmo que pareça obscuro à primeira vista. Exemplos do que NÃO deves sugerir por já serem demasiado estabelecidos: Sufjan Stevens, Faye Webster, Bon Iver, Phoebe Bridgers, Mitski, Big Thief, Fleet Foxes.
+        3. Prefere artistas com poucas faixas lançadas (1-2 EPs ou um primeiro álbum), sem grande presença em playlists editoriais da Spotify.
+        4. Baseia-te estritamente nos Géneros Dominantes para evitar ruído local/pimba ou pop comercial.
+        5. Devolve APENAS um array JSON de strings com os nomes dos artistas, sem markdown, sem explicações.
+ 
         Formato: ["Nome 1", "Nome 2"]
         """
 
