@@ -3,6 +3,7 @@ import urllib.parse
 from dotenv import load_dotenv
 
 load_dotenv()  # Carrega as variáveis de ambiente do arquivo .env
+IS_PRODUCTION = os.getenv("IS_PRODUCTION", "False") == "True"
 
 from security import create_session_token, verify_session_token
 from fastapi import FastAPI, HTTPException, Response, Cookie, Depends
@@ -112,7 +113,7 @@ async def spotify_callback(response: Response, code: str = None, error: str = No
         key="session_token",
         value=meu_jwt_seguro,
         httponly=True,
-        secure=False, #mudar para True em produção com HTTPS
+        secure=IS_PRODUCTION,  # True em produção, False em desenvolvimento
         samesite="lax", 
         max_age=3600,  # 1 hora
         path="/"
