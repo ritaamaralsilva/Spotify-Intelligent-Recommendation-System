@@ -16,8 +16,8 @@ interface ApiResponse {
   top_genres?: GenreStat[];
 }
 
-// Definir a URL base da API do backend (apenas hardcoded em fase de dev e testes)
-const API_BASE_URL = 'http://127.0.0.1:8000';
+// 🟢 Configuração Dinâmica de URLs: Lê do Azure se houver variável, caso contrário usa Localhost
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 function App() {
   // null = ainda não sabemos, false = não autenticado, true = autenticado
@@ -48,7 +48,7 @@ function App() {
     window.location.href = `${API_BASE_URL}/api/login`;
   };
 
-  // Verifica se a sessão está ativa tentando carregar as estatísticas.
+  // Verifica se a sessão está activa tentando carregar as estatísticas.
   // Se der 401, mostramos o ecrã de login; se der sucesso, mostramos a app.
   const checkSession = async () => {
     try {
@@ -319,7 +319,8 @@ function App() {
         {statsGeneros.length > 0 && (
           <div style={{ backgroundColor: '#181818', padding: '24px', borderRadius: '8px', border: '1px solid #282828' }}>
             <h2 style={{ color: '#1DB954', fontSize: '1.2rem', marginBottom: '4px' }}>Analytics</h2>
-            <p style={{ color: '#B3B3B3', fontSize: '0.8rem', marginBottom: '20px' }}>Mapa dos Gostos Musicais & Tendência Pessoal</p>
+            {/* O subtítulo mantém o charme, mas o backend vai injetar o nome dos teus top artistas no lugar da key 'genre' */}
+            <p style={{ color: '#B3B3B3', fontSize: '0.8rem', marginBottom: '20px' }}>Artistas em Proeminência na tua Biblioteca</p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {statsGeneros.map((item, idx) => (
@@ -335,7 +336,7 @@ function App() {
               ))}
             </div>
             <p style={{ color: '#6A6A6A', fontSize: '0.75rem', marginTop: '20px', textAlign: 'center', lineHeight: '1.4' }}>
-              Estes são os teus géneros favoritos. A IA usa esta lista como bússola para te garantir descobertas 100% personalizadas e fora do circuito comercial (mainstream). 🎧
+              Estes são os teus artistas de maior relevância. A IA usa este ecossistema como bússola para te garantir descobertas 100% personalizadas e fora do circuito comercial (mainstream). 🎧
             </p>
           </div>
         )}
