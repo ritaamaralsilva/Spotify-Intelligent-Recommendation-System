@@ -36,6 +36,14 @@ SPOTIFY_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI")
 
 SCOPES = "user-library-read playlist-read-private playlist-modify-public playlist-modify-private"
 
+# Em produção (frontend e backend em domínios diferentes) o cookie tem de ser
+# SameSite=None + Secure=True para o browser aceitar enviá-lo entre domínios.
+# Em desenvolvimento local (mesmo host, portas diferentes) isso quebraria o cookie,
+# porque Secure exige HTTPS. Por isso alternamos consoante o ambiente.
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+COOKIE_SECURE = ENVIRONMENT == "production"
+COOKIE_SAMESITE = "none" if ENVIRONMENT == "production" else "lax"
+
 # Configuração de segurança CORS para permitir chamadas do frontend
 app.add_middleware(
     CORSMiddleware,
@@ -113,8 +121,8 @@ async def spotify_callback(response: Response, code: str = None, error: str = No
         key="session_token",
         value=meu_jwt_seguro,
         httponly=True,
-        secure=IS_PRODUCTION,  # True em produção, False em desenvolvimento
-        samesite="lax", 
+        secure=COOKIE_SECURE,  # True em produção, False em desenvolvimento
+        samesite=COOKIE_SAMESITE, 
         max_age=3600,  # 1 hora
         path="/"
     )
